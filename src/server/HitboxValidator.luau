@@ -23,7 +23,8 @@ RAYCAST_PARAMS.IgnoreWater = true
 function HitboxValidatorModule.validate(
 	request: HitRequest,
 	attacker: Player,
-	buffer: TemporalBuffer
+	buffer: TemporalBuffer,
+	config: any?
 ): HitResult
 	-- Resolve target player
 	local target = Players:GetPlayerByUserId(request.targetUserId)
@@ -51,6 +52,21 @@ function HitboxValidatorModule.validate(
 	local targetPosition = buffer:getPositionAt(target, request.timestamp)
 	if not targetPosition then
 		return { valid = false, reason = "Target position not in buffer" }
+	end
+
+	-- Anti-exploit: verify client origin is close to server's stored position
+	local cfg = config or {}
+	local maxDelta = cfg.maxPositionDelta or 5
+	local originDelta = (request.origin - attackerPosition.Position).Magnitude
+	if originDelta > maxDelta then
+		return { valid = false, reason = "Position mismatch" }
+	end
+
+	-- Anti-exploit: reject if attacker and target are too far apart
+	local maxDist = cfg.maxAttackerTargetDistance or 50
+	local attackerTargetDist = (attackerPosition.Position - targetPosition.Position).Magnitude
+	if attackerTargetDist > maxDist then
+		return { valid = false, reason = "Target too far" }
 	end
 
 	-- Build ray origin and direction from rewound attacker position

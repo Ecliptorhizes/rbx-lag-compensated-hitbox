@@ -9,9 +9,13 @@ export type HitRequest = {
 	origin: Vector3,
 	direction: Vector3,
 	maxDistance: number,
+	requestId: string?, -- For round-trip latency measurement + replay protection
+	sessionToken: string?, -- Anti-exploit: server-issued token
+	checksum: string?, -- Anti-exploit: hash of payload for integrity verification
 }
 
 export type HitResult = {
 	valid: boolean,
 	reason: string?,
+	requestId: string?, -- Echoed for latency tracking
 }

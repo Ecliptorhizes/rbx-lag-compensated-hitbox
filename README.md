@@ -50,17 +50,23 @@ rbx-lag-compensated-hitbox/
 ├── sourcemap.json
 └── src/
     ├── shared/
-    │   ├── HitboxConfig.luau     # Config (buffer, raycast, rate limits)
-    │   └── Types.luau            # HitRequest, HitResult types
+    │   ├── HitboxConfig.luau    # Config (buffer, raycast, input, debug)
+    │   ├── HitboxAPI.luau       # Public API for developer customization
+    │   ├── Checksum.luau        # Payload integrity hash (anti-exploit)
+    │   └── Types.luau           # HitRequest, HitResult types
     ├── server/
-    │   ├── init.server.luau      # Entry point, wires modules
-    │   ├── TemporalBuffer.luau   # Position history buffer
-    │   ├── PositionTracker.luau  # Records positions every Heartbeat
-    │   ├── HitboxValidator.luau  # Server raycast + rewind validation
+    │   ├── init.server.luau     # Entry point, wires modules
+    │   ├── TemporalBuffer.luau  # Position history buffer
+    │   ├── PositionTracker.luau # Records positions every Heartbeat
+    │   ├── RequestIntegrity.luau # Session tokens, replay protection
+    │   ├── HitboxValidator.luau # Server raycast + rewind validation
     │   └── HitRequestHandler.luau # RemoteEvent, rate limiting, validation
     └── client/
-        ├── init.client.luau      # Entry point
-        └── HitboxClient.luau     # Raycast + hit request emission
+        ├── init.client.luau     # Entry point
+        ├── HitboxClient.luau    # Raycast + hit request emission
+        ├── DebugVisualizer.luau # Real-time hurt/hit box display
+        ├── PositionPredictor.luau # Client-side position extrapolation
+        └── LagLogger.luau      # Developer console lag warnings
 ```
 
 **File locations:**
@@ -73,6 +79,9 @@ rbx-lag-compensated-hitbox/
 | Rojo sourcemap | `sourcemap.json` |
 | Shared types | `src/shared/Types.luau` |
 | Shared config | `src/shared/HitboxConfig.luau` |
+| Hitbox API | `src/shared/HitboxAPI.luau` |
+| Checksum | `src/shared/Checksum.luau` |
+| Request integrity | `src/server/RequestIntegrity.luau` |
 | Server entry | `src/server/init.server.luau` |
 | Temporal buffer | `src/server/TemporalBuffer.luau` |
 | Position tracker | `src/server/PositionTracker.luau` |
@@ -80,13 +89,38 @@ rbx-lag-compensated-hitbox/
 | Hit request handler | `src/server/HitRequestHandler.luau` |
 | Client entry | `src/client/init.client.luau` |
 | Hitbox client | `src/client/HitboxClient.luau` |
+| Debug visualizer | `src/client/DebugVisualizer.luau` |
+| Position predictor | `src/client/PositionPredictor.luau` |
+| Lag logger | `src/client/LagLogger.luau` |
+| Request integrity | `src/server/RequestIntegrity.luau` |
+| Checksum (shared) | `src/shared/Checksum.luau` |
+
+## Anti-Exploit Protection
+
+The system includes multiple layers to prevent exploiters from abusing the hitbox:
+
+| Layer | Description |
+|-------|-------------|
+| **Session tokens** | Server-issued tokens that must be included in every request. Prevents external bots and replay from other sessions. |
+| **Replay protection** | Tracks recent request IDs; rejects duplicate requests (replay attacks). |
+| **Checksum validation** | Payload integrity hash — detects tampering with timestamp, target, origin, direction, or distance. |
+| **Position validation** | Server verifies client origin is within `maxPositionDelta` (5 studs) of server's stored position. |
+| **Distance validation** | Rejects hits if attacker and target are farther than `maxAttackerTargetDistance` (50 studs). |
+| **Rate limiting** | 10 hits/second per player to prevent spam. |
+
+Configure in `HitboxConfig`:
+- `enableSessionTokens` — Require server-issued tokens (default: true)
+- `enableReplayProtection` — Reject duplicate request IDs (default: true)
+- `maxPositionDelta` — Max allowed client/server position mismatch (studs)
+- `maxAttackerTargetDistance` — Max allowed attacker-target distance (studs)
 
 ## Implemented Modules
 
 ### Shared
 
 - **Types** — `HitRequest`, `HitResult` types for the hit request payload
-- **HitboxConfig** — Buffer window, raycast distance, rate limits, validation bounds
+- **HitboxConfig** — Buffer window, raycast distance, rate limits, input bindings, debug options
+- **HitboxAPI** — Public API for developers to customize config before the client starts
 
 ### Server
 
@@ -97,13 +131,71 @@ rbx-lag-compensated-hitbox/
 
 ### Client
 
-- **HitboxClient** — Raycast from camera look direction on left-click/tap, fires hit request to server
+- **HitboxClient** — Raycast from camera look direction, fires hit request to server
+- **DebugVisualizer** — Renders **hurt box** (target) and **hit box** (attacker ray) in real-time
+- **PositionPredictor** — Extrapolates player positions when server lags for smoother gameplay
+- **LagLogger** — Logs to developer console when round-trip latency exceeds threshold
+
+## Developer Integration
+
+### Configurable Input
+
+Choose **any button** to trigger hits:
+
+```lua
+local HitboxAPI = require(ReplicatedStorage.Shared.HitboxAPI)
+HitboxAPI.setConfig({
+    hitInputTypes = { "MouseButton1", "MouseButton2", "Touch" },  -- Left/right click, touch
+    hitKeyCodes = { "Q", "F", "E", "R" },                         -- Keyboard keys
+})
+```
+
+### Debug Mode: Hurt Box & Hit Box
+
+Show hitbox size in real-time:
+
+```lua
+HitboxAPI.setConfig({
+    debugMode = true,
+    hurtBoxColor = Color3.fromRGB(255, 100, 100),   -- Red = damage receiver
+    hitBoxColor = Color3.fromRGB(100, 255, 100),    -- Green = attack ray
+})
+```
+
+- **Hurt box** — Red overlay on each player's character (where damage is received)
+- **Hit box** — Green beam showing the attack ray/range
+
+### Lag Logging
+
+See in the developer console when the system is lagging:
+
+```lua
+HitboxAPI.setConfig({
+    lagWarningThresholdMs = 150,  -- Warn when round-trip exceeds 150ms
+})
+```
+
+Output: `[Hitbox] Lag detected: 200ms round-trip (threshold: 150ms) | Timestamp out of buffer window`
+
+### Prediction System
+
+When the server lags, the client predicts player movement so both sides feel smooth:
+
+```lua
+HitboxAPI.setConfig({
+    predictionEnabled = true,
+    predictionExtrapolationMs = 100,  -- How far ahead to predict (based on latency)
+})
+```
+
+The client extrapolates target positions using velocity, allowing hits to register more reliably under lag.
 
 ### Usage
 
-1. **Left-click** (or tap on mobile) to attempt a hit. The client raycasts from your character toward the camera look direction.
-2. The server validates the request, rewinds both players to the hit timestamp, and performs its own raycast.
-3. If valid, the server fires `HitboxHitResult` back to the client with `{ valid = true }` or `{ valid = false, reason = "..." }`.
+1. Set your preferred input and options via `HitboxAPI.setConfig()` before the client starts.
+2. Use the configured button to attempt a hit. The client raycasts toward the camera look direction (or predicted target position when prediction is enabled).
+3. The server validates, rewinds, and performs its own raycast.
+4. If valid, the server fires `HitboxHitResult` back with `{ valid = true }` or `{ valid = false, reason = "..." }`.
 
 ## Requirements
 
