@@ -42,53 +42,68 @@ A **server-authoritative lag-compensated hitbox system** for Roblox (Luau). This
 ## Project Structure
 
 ```
-src/
-├── shared/           # Shared logic (types, constants)
-│   └── Hello.luau
-├── server/
-│   ├── init.server.luau
-│   └── TemporalBuffer.luau    # Position history buffer
-└── client/
-    └── init.client.luau
+rbx-lag-compensated-hitbox/
+├── .gitignore
+├── default.project.json
+├── LICENSE
+├── README.md
+├── sourcemap.json
+└── src/
+    ├── shared/
+    │   ├── HitboxConfig.luau     # Config (buffer, raycast, rate limits)
+    │   └── Types.luau            # HitRequest, HitResult types
+    ├── server/
+    │   ├── init.server.luau      # Entry point, wires modules
+    │   ├── TemporalBuffer.luau   # Position history buffer
+    │   ├── PositionTracker.luau  # Records positions every Heartbeat
+    │   ├── HitboxValidator.luau  # Server raycast + rewind validation
+    │   └── HitRequestHandler.luau # RemoteEvent, rate limiting, validation
+    └── client/
+        ├── init.client.luau      # Entry point
+        └── HitboxClient.luau     # Raycast + hit request emission
 ```
+
+**File locations:**
+
+| File | Path |
+|------|------|
+| Project config | `default.project.json` |
+| Git ignore | `.gitignore` |
+| License | `LICENSE` |
+| Rojo sourcemap | `sourcemap.json` |
+| Shared types | `src/shared/Types.luau` |
+| Shared config | `src/shared/HitboxConfig.luau` |
+| Server entry | `src/server/init.server.luau` |
+| Temporal buffer | `src/server/TemporalBuffer.luau` |
+| Position tracker | `src/server/PositionTracker.luau` |
+| Hitbox validator | `src/server/HitboxValidator.luau` |
+| Hit request handler | `src/server/HitRequestHandler.luau` |
+| Client entry | `src/client/init.client.luau` |
+| Hitbox client | `src/client/HitboxClient.luau` |
 
 ## Implemented Modules
 
-### TemporalBuffer (`src/server/TemporalBuffer.luau`)
+### Shared
 
-Circular buffer that stores player position history for server-side rewind validation.
+- **Types** — `HitRequest`, `HitResult` types for the hit request payload
+- **HitboxConfig** — Buffer window, raycast distance, rate limits, validation bounds
 
-- **Window**: 500ms (configurable)
-- **Capacity**: 60 entries per player (~120Hz)
-- **Interpolation**: Linear interpolation between snapshots for smooth rewinds
+### Server
 
-**API:**
+- **TemporalBuffer** — Circular buffer for player position history (500ms, 60 entries)
+- **PositionTracker** — Records all player positions every Heartbeat
+- **HitboxValidator** — Rewinds positions and performs server raycast for hit confirmation
+- **HitRequestHandler** — Creates RemoteEvents, rate limits (10/sec), validates args, delegates to HitboxValidator
 
-```lua
-local TemporalBuffer = require(path.to.TemporalBuffer)
+### Client
 
-local buffer = TemporalBuffer.new(500, 60)  -- maxAgeMs, maxEntriesPerPlayer
+- **HitboxClient** — Raycast from camera look direction on left-click/tap, fires hit request to server
 
--- Add position each frame (from PositionTracker)
-buffer:add(player, character.HumanoidRootPart.CFrame)
+### Usage
 
--- Rewind during hit validation
-local position = buffer:getPositionAt(targetPlayer, requestTimestamp)
-
--- Cleanup old entries periodically
-buffer:prune()
-
--- Teardown
-buffer:destroy()
-```
-
-## Planned Components
-
-- **PositionTracker** — Records all player positions into the buffer every Heartbeat
-- **HitboxValidator** — Server raycast + rewind logic
-- **HitRequestHandler** — RemoteEvent handling, rate limiting, argument validation
-- **HitboxClient** — Client raycast + hit request emission
-- **Shared types** — HitRequest payload, constants
+1. **Left-click** (or tap on mobile) to attempt a hit. The client raycasts from your character toward the camera look direction.
+2. The server validates the request, rewinds both players to the hit timestamp, and performs its own raycast.
+3. If valid, the server fires `HitboxHitResult` back to the client with `{ valid = true }` or `{ valid = false, reason = "..." }`.
 
 ## Requirements
 
