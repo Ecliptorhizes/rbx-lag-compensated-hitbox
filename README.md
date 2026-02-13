@@ -39,12 +39,30 @@ A **server-authoritative lag-compensated hitbox system** for Roblox (Luau). This
 - **MemoryStoreService** — Optional, for future extension
 - **CollectionService** — Optional, for tagging hitbox/damageable entities
 
+## Wally Packages
+
+The project uses [Wally](https://wally.run/) for package management:
+
+| Package | Purpose |
+|---------|---------|
+| **Knit** | Lightweight game framework — services (server) and controllers (client) |
+| **Promise** | Async/await-style promises for asynchronous operations |
+| **Signal** | Event/signal library for decoupled communication |
+| **Janitor** | Cleanup and resource management |
+
+```bash
+wally install
+```
+
 ## Project Structure
 
 ```
 rbx-lag-compensated-hitbox/
 ├── .gitignore
 ├── default.project.json
+├── wally.toml
+├── wally.lock
+├── Packages/                 # Wally dependencies (Knit, Promise, Signal, Janitor)
 ├── LICENSE
 ├── README.md
 ├── sourcemap.json
@@ -55,14 +73,18 @@ rbx-lag-compensated-hitbox/
     │   ├── Checksum.luau        # Payload integrity hash (anti-exploit)
     │   └── Types.luau           # HitRequest, HitResult types
     ├── server/
-    │   ├── init.server.luau     # Entry point, wires modules
+    │   ├── init.server.luau     # Knit entry point
+    │   ├── services/
+    │   │   └── HitboxService.luau # Knit service (wires buffer, tracker, handler)
     │   ├── TemporalBuffer.luau  # Position history buffer
     │   ├── PositionTracker.luau # Records positions every Heartbeat
     │   ├── RequestIntegrity.luau # Session tokens, replay protection
     │   ├── HitboxValidator.luau # Server raycast + rewind validation
     │   └── HitRequestHandler.luau # RemoteEvent, rate limiting, validation
     └── client/
-        ├── init.client.luau     # Entry point
+        ├── init.client.luau     # Knit entry point
+        ├── controllers/
+        │   └── HitboxController.luau # Knit controller (HitResult, LagDetected signals)
         ├── HitboxClient.luau    # Raycast + hit request emission
         ├── DebugVisualizer.luau # Real-time hurt/hit box display
         ├── PositionPredictor.luau # Client-side position extrapolation
@@ -83,11 +105,13 @@ rbx-lag-compensated-hitbox/
 | Checksum | `src/shared/Checksum.luau` |
 | Request integrity | `src/server/RequestIntegrity.luau` |
 | Server entry | `src/server/init.server.luau` |
+| Hitbox service | `src/server/services/HitboxService.luau` |
 | Temporal buffer | `src/server/TemporalBuffer.luau` |
 | Position tracker | `src/server/PositionTracker.luau` |
 | Hitbox validator | `src/server/HitboxValidator.luau` |
 | Hit request handler | `src/server/HitRequestHandler.luau` |
 | Client entry | `src/client/init.client.luau` |
+| Hitbox controller | `src/client/controllers/HitboxController.luau` |
 | Hitbox client | `src/client/HitboxClient.luau` |
 | Debug visualizer | `src/client/DebugVisualizer.luau` |
 | Position predictor | `src/client/PositionPredictor.luau` |
@@ -197,8 +221,30 @@ The client extrapolates target positions using velocity, allowing hits to regist
 3. The server validates, rewinds, and performs its own raycast.
 4. If valid, the server fires `HitboxHitResult` back with `{ valid = true }` or `{ valid = false, reason = "..." }`.
 
+## Knit Signals
+
+Connect to hit results and lag events via the HitboxController:
+
+```lua
+local Knit = require(ReplicatedStorage.Packages.Knit)
+Knit.Start():await()
+
+local HitboxController = Knit.GetController("HitboxController")
+HitboxController.HitResult:Connect(function(result)
+    if result.valid then
+        -- Play hit sound, show VFX
+    else
+        -- Show "Miss" feedback
+    end
+end)
+HitboxController.LagDetected:Connect(function(roundTripMs, reason)
+    warn("Lag:", roundTripMs, "ms", reason)
+end)
+```
+
 ## Requirements
 
+- [Wally](https://wally.run/) — Run `wally install` before syncing
 - Roblox Studio or Rojo for syncing
 - Luau (Roblox Lua)
 - `FilteringEnabled: true` (already configured in `default.project.json`)

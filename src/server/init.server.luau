@@ -1,22 +1,13 @@
 --!strict
 --[[
-	Server entry point: wires together the lag-compensated hitbox system.
+	Server entry point: starts Knit and loads hitbox services.
 ]]
 
-local HitboxConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("HitboxConfig")) :: any
-local TemporalBuffer = require(script.Parent.TemporalBuffer)
-local PositionTracker = require(script.Parent.PositionTracker)
-local HitRequestHandler = require(script.Parent.HitRequestHandler)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local config = HitboxConfig
+local Knit = require(ReplicatedStorage.Packages.Knit)
 
-local buffer = TemporalBuffer.new(config.bufferWindowMs, config.maxEntriesPerPlayer)
-local positionTracker = PositionTracker.new(buffer)
-local hitRequestHandler = HitRequestHandler.new(buffer, config)
+-- Load all services from the services folder
+Knit.AddServices(script.Parent.services)
 
--- Cleanup on server shutdown (optional; Roblox doesn't always call this)
-game:BindToClose(function()
-	positionTracker:destroy()
-	hitRequestHandler:destroy()
-	buffer:destroy()
-end)
+Knit.Start():catch(warn)

@@ -26,6 +26,11 @@ export type HitboxClient = {
 	destroy: (self: HitboxClient) -> (),
 }
 
+export type HitboxClientCallbacks = {
+	onHitResult: ((result: { valid: boolean, reason: string? }) -> ())?,
+	onLagDetected: ((roundTripMs: number, reason: string?) -> ())?,
+}
+
 local RAYCAST_PARAMS = RaycastParams.new()
 RAYCAST_PARAMS.FilterType = Enum.RaycastFilterType.Exclude
 RAYCAST_PARAMS.IgnoreWater = true
@@ -48,13 +53,22 @@ local function generateRequestId(): string
 	return tostring(tick()) .. "-" .. tostring(math.random(10000, 99999))
 end
 
-function HitboxClientModule.new(configOverride: any?): HitboxClient
+function HitboxClientModule.new(configOverride: any?, callbacks: HitboxClientCallbacks?): HitboxClient
 	local connection: RBXScriptConnection?
 	local resultConnection: RBXScriptConnection?
 	local tokenConnection: RBXScriptConnection?
 	local remote: RemoteEvent? = ReplicatedStorage:WaitForChild(REMOTE_NAME) :: RemoteEvent?
 	local resultRemote: RemoteEvent? = ReplicatedStorage:WaitForChild(RESULT_REMOTE_NAME) :: RemoteEvent?
 	local tokenRemote: RemoteEvent? = ReplicatedStorage:FindFirstChild(TOKEN_REMOTE_NAME) :: RemoteEvent?
+
+	local shared = ReplicatedStorage:WaitForChild("Shared")
+	local config: any
+	if configOverride then
+		config = configOverride
+	else
+		local api = shared:FindFirstChild("HitboxAPI")
+		config = api and (require(api :: ModuleScript) :: any):getConfig() or HitboxConfig
+	end
 
 	local sessionToken: string? = nil
 	local requestTokenRemote: RemoteEvent? = ReplicatedStorage:FindFirstChild("HitboxRequestToken") :: RemoteEvent?
@@ -69,15 +83,6 @@ function HitboxClientModule.new(configOverride: any?): HitboxClient
 				requestTokenRemote:FireServer()
 			end
 		end)
-	end
-
-	local shared = ReplicatedStorage:WaitForChild("Shared")
-	local config: any
-	if configOverride then
-		config = configOverride
-	else
-		local api = shared:FindFirstChild("HitboxAPI")
-		config = api and (require(api :: ModuleScript) :: any):getConfig() or HitboxConfig
 	end
 	local debugVisualizer: DebugVisualizer.DebugVisualizer? = config.debugMode and DebugVisualizer.new({
 		hurtBoxColor = config.hurtBoxColor,
@@ -195,12 +200,13 @@ function HitboxClientModule.new(configOverride: any?): HitboxClient
 			local roundTripMs = lagLogger:recordReceive(result.requestId)
 			if roundTripMs then
 				lagLogger:logIfLagging(roundTripMs, result.reason or nil)
+				if callbacks and callbacks.onLagDetected and roundTripMs >= (config.lagWarningThresholdMs or 150) then
+					callbacks.onLagDetected(roundTripMs, result.reason or nil)
+				end
 			end
 
-			if result.valid then
-				-- Hit confirmed (extend for feedback: sound, VFX, etc.)
-			else
-				-- Hit rejected (extend for feedback: "Miss", etc.)
+			if callbacks and callbacks.onHitResult then
+				callbacks.onHitResult({ valid = result.valid, reason = result.reason })
 			end
 		end)
 	end
