@@ -1,4 +1,4 @@
-# rbx-lag-compensated-hitbox
+# rbx-lag-compensated-hitbox (WORKING PROGRESS - VIDEO SOON)
 
 A **server-authoritative lag-compensated hitbox system** for Roblox (Luau). This is a modular engineering showcase project—not a full game—designed to demonstrate best practices for lag compensation in networked combat.
 
